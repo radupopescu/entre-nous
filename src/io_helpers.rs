@@ -11,7 +11,7 @@ use crate::{Error, Result};
 
 pub(crate) fn read<S>(source: &mut S, buf: &mut [u8]) -> Result<usize>
 where
-    S: std::io::Read,
+    S: std::io::Read + ?Sized,
 {
     loop {
         match source.read(buf) {
@@ -28,7 +28,7 @@ where
 
 pub(crate) fn write<D>(dest: &mut D, data: &[u8]) -> Result<usize>
 where
-    D: std::io::Write,
+    D: std::io::Write + ?Sized,
 {
     loop {
         match dest.write(data) {

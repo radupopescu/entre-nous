@@ -10,14 +10,16 @@ mod io_helpers;
 mod sign;
 mod symmetric;
 
-
 pub use {
     errors::{Error, Result},
     sign::{verify, KeyPair, PublicKey, Signature, SignatureStream},
     symmetric::{Key as SymmetricKey, Packet},
 };
 
-use std::{convert::TryInto, mem::{size_of, size_of_val}};
+use std::{
+    convert::TryInto,
+    mem::{size_of, size_of_val},
+};
 
 use crate::symmetric::{Header, ENCRYPTION_ADDITIONAL_BYTES, HEADER_BYTES};
 
@@ -51,8 +53,8 @@ pub fn stream_encrypt_and_sign<D, S>(
     max_read_bytes: Option<usize>,
 ) -> Result<Packet>
 where
-    S: std::io::Read,
-    D: std::io::Write,
+    S: std::io::Read + ?Sized,
+    D: std::io::Write + ?Sized,
 {
     let mut encryption_stream = encryption_key.init_encryption_stream()?;
     let mut signature_stream = SignatureStream::new();
@@ -81,9 +83,13 @@ where
             break;
         }
         let last_chunk = read_bytes < chunk_size;
-        encryption_stream.push_to_vec(&read_buffer[..read_bytes], last_chunk, &mut encryption_buffer)?;
+        encryption_stream.push_to_vec(
+            &read_buffer[..read_bytes],
+            last_chunk,
+            &mut encryption_buffer,
+        )?;
         let written_bytes = io_helpers::write(dest, &encryption_buffer)?;
-        if written_bytes != read_bytes {
+        if written_bytes != read_bytes + ENCRYPTION_ADDITIONAL_BYTES {
             return Err(Error::StreamingWrite);
         }
         signature_stream.push(&read_buffer[..read_bytes]);
@@ -145,7 +151,7 @@ where
     let mut decryption_stream = decryption_key.init_decryption_stream(&header)?;
     let mut signature_stream = SignatureStream::new();
 
-    let mut read_buffer = vec![0; chunk_size];
+    let mut read_buffer = vec![0; chunk_size + ENCRYPTION_ADDITIONAL_BYTES];
     let mut decryption_buffer = Vec::with_capacity(chunk_size);
     while !decryption_stream.is_finalized() {
         let read_bytes = io_helpers::read(source, &mut read_buffer)?;
@@ -154,10 +160,10 @@ where
         }
         decryption_stream.pull_to_vec(&read_buffer[..read_bytes], &mut decryption_buffer)?;
         let written_bytes = io_helpers::write(dest, &decryption_buffer)?;
-        if written_bytes != read_bytes {
+        if written_bytes + ENCRYPTION_ADDITIONAL_BYTES != read_bytes {
             return Err(Error::StreamingWrite);
         }
-        signature_stream.push(&read_buffer[..read_bytes]);
+        signature_stream.push(&decryption_buffer[..written_bytes]);
     }
 
     signature_stream.verify(&signature, verification_key)?;
@@ -167,7 +173,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
+    use {
+        std::{
+            cmp::Ordering,
+            io::{Seek, SeekFrom, Write},
+        },
+        tempfile::tempfile,
+    };
+
+    use std::io::Read;
 
     use super::*;
 
@@ -180,6 +194,79 @@ mod tests {
         let envelope = encrypt_and_sign(msg, &encryption_key, &signing_key, Some(10))?;
         let msg_again = decrypt_and_verify(&envelope, &encryption_key, &signing_key.public_key())?;
         assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
+        Ok(())
+    }
+
+    #[test]
+    fn mem_stream_encrypt_and_sign_then_decrypt_and_verify() -> Result<()> {
+        init().expect("Should always initialize");
+        let signing_key = KeyPair::new();
+        let encryption_key = SymmetricKey::new();
+
+        let msg = "THIS IS ANOTHER VERY LONG MESSAGE".as_bytes();
+
+        let mut ciphertext = Vec::new();
+        let signature_packet = stream_encrypt_and_sign(
+            &mut (&msg[..]),
+            &mut ciphertext,
+            &encryption_key,
+            &signing_key,
+            10,
+            None,
+        )?;
+
+        let mut msg_again = Vec::new();
+        stream_decrypt_and_verify(
+            &mut (&ciphertext[..]),
+            &mut msg_again,
+            &signature_packet,
+            &encryption_key,
+            &signing_key.public_key(),
+        )?;
+        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn file_stream_encrypt_and_sign_then_decrypt_and_verify() -> Result<()> {
+        init().expect("Should always initialize");
+        let signing_key = KeyPair::new();
+        let encryption_key = SymmetricKey::new();
+
+        let msg = "THIS IS ANOTHER VERY LONG MESSAGE".as_bytes();
+
+        let mut input_file = tempfile()?;
+        input_file.write(msg)?;
+        input_file.seek(SeekFrom::Start(0))?;
+
+        let mut ciphertext_file = tempfile()?;
+        let signature_packet = stream_encrypt_and_sign(
+            &mut input_file,
+            &mut ciphertext_file,
+            &encryption_key,
+            &signing_key,
+            10,
+            None,
+        )?;
+        ciphertext_file.seek(SeekFrom::Start(0))?;
+
+        let mut output_file = tempfile()?;
+        stream_decrypt_and_verify(
+            &mut ciphertext_file,
+            &mut output_file,
+            &signature_packet,
+            &encryption_key,
+            &signing_key.public_key(),
+        )?;
+
+        output_file.seek(SeekFrom::Start(0))?;
+
+        let mut msg_again = Vec::new();
+        output_file.read_to_end(&mut msg_again)?;
+
+        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
+
         Ok(())
     }
 }
