@@ -11,8 +11,18 @@ env:
 
 jobs:
   build:
+    
+    runs-on: ${{ matrix.config.os }}
 
-    runs-on: ubuntu-latest
+    name: ${{ matrix.config.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: windows-latest}
+          - {os: macOS-latest}
+          - {os: ubuntu-latest}
 
     steps:
     - uses: actions/checkout@v2
