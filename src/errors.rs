@@ -17,7 +17,6 @@ pub enum Error {
     InvalidSignature,
     InvalidSize(TryFromSliceError),
     InvalidSliceSize,
-    InvalidChunkSize,
     StreamingEncryptionInit,
     StreamingEncryptionPush,
     StreamingEncryptionFinalize,
@@ -36,7 +35,6 @@ impl std::error::Error for Error {
             Error::InvalidSignature => None,
             Error::InvalidSize(ref source) => Some(source),
             Error::InvalidSliceSize => None,
-            Error::InvalidChunkSize => None,
             Error::StreamingEncryptionInit => None,
             Error::StreamingEncryptionPush => None,
             Error::StreamingEncryptionFinalize => None,
@@ -44,7 +42,7 @@ impl std::error::Error for Error {
             Error::StreamingDecryptionPull => None,
             Error::StreamingRead => None,
             Error::StreamingWrite => None,
-            Error::IO(ref source ) => Some(source),
+            Error::IO(ref source) => Some(source),
         }
     }
 }
@@ -57,12 +55,11 @@ impl std::fmt::Display for Error {
             Error::InvalidSignature => write!(f, "Invalid signature"),
             Error::InvalidSize(ref source) => source.fmt(f),
             Error::InvalidSliceSize => write!(f, "Invalid size of input slice"),
-            Error::InvalidChunkSize => write!(f, "Invalid chunk size"),
             Error::StreamingEncryptionInit => write!(f, "Error initializing encryption stream"),
             Error::StreamingEncryptionPush => write!(f, "Error pushing to encryption stream"),
             Error::StreamingEncryptionFinalize => write!(f, "Error finalizing encryption stream"),
             Error::StreamingDecryptionInit => write!(f, "Error initializing decryption stream"),
-            Error::StreamingDecryptionPull => write!(f, "Error pushing from decryption stream"),
+            Error::StreamingDecryptionPull => write!(f, "Error pulling from decryption stream"),
             Error::StreamingRead => write!(f, "Error reading from stream"),
             Error::StreamingWrite => write!(f, "Error writing to stream"),
             Error::IO(ref source) => source.fmt(f),

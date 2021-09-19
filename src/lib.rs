@@ -154,7 +154,12 @@ where
     let mut read_buffer = vec![0; chunk_size + ENCRYPTION_ADDITIONAL_BYTES];
     let mut decryption_buffer = Vec::with_capacity(chunk_size);
     while !decryption_stream.is_finalized() {
-        let read_bytes = io_helpers::read(source, &mut read_buffer)?;
+        let read_bytes = if chunk_size != 0 {
+            io_helpers::read(source, &mut read_buffer)?
+        } else {
+            read_buffer.clear();
+            source.read_to_end(&mut read_buffer)?
+        };
         if read_bytes == 0 {
             break;
         }
@@ -174,32 +179,45 @@ where
 #[cfg(test)]
 mod tests {
     use {
+        proptest::prelude::*,
         std::{
             cmp::Ordering,
-            io::{Seek, SeekFrom, Write},
+            io::{Read, Seek, SeekFrom, Write},
         },
         tempfile::tempfile,
     };
 
-    use std::io::Read;
-
     use super::*;
 
-    #[test]
-    fn encrypt_and_sign_then_decrypt_and_verify() -> Result<()> {
-        init().expect("Should always initialize");
-        let signing_key = KeyPair::new();
-        let encryption_key = SymmetricKey::new();
-        let msg = "VERY LONG MESSAGE".as_bytes();
-        let envelope = encrypt_and_sign(msg, &encryption_key, &signing_key, Some(10))?;
-        let msg_again = decrypt_and_verify(&envelope, &encryption_key, &signing_key.public_key())?;
-        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
-        Ok(())
+    pub(crate) fn optional_chunk_size_strategy(
+        max_chunk_size: usize,
+    ) -> impl Strategy<Value = Option<usize>> {
+        prop_oneof![Just(None), (0..max_chunk_size).prop_map(|v| Some(v)),].boxed()
+    }
+
+    pub(crate) fn message_strategy(max_message_size: usize) -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), 0..max_message_size)
+    }
+
+    proptest! {
+        #[test]
+        fn encrypt_and_sign_then_decrypt_and_verify(
+            chunk_size in optional_chunk_size_strategy(2000),
+            msg in message_strategy(1000)
+        ) {
+            init()?;
+            let signing_key = KeyPair::new();
+            let encryption_key = SymmetricKey::new();
+
+            let envelope = encrypt_and_sign(msg.as_slice(), &encryption_key, &signing_key, chunk_size)?;
+            let msg_again = decrypt_and_verify(&envelope, &encryption_key, &signing_key.public_key())?;
+            assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+        }
     }
 
     #[test]
     fn mem_stream_encrypt_and_sign_then_decrypt_and_verify() -> Result<()> {
-        init().expect("Should always initialize");
+        init()?;
         let signing_key = KeyPair::new();
         let encryption_key = SymmetricKey::new();
 
@@ -230,7 +248,7 @@ mod tests {
 
     #[test]
     fn file_stream_encrypt_and_sign_then_decrypt_and_verify() -> Result<()> {
-        init().expect("Should always initialize");
+        init()?;
         let signing_key = KeyPair::new();
         let encryption_key = SymmetricKey::new();
 

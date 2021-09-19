@@ -13,7 +13,7 @@ use sodiumoxide::crypto::sign::{
     SIGNATUREBYTES as SODIUM_SIGNATUREBYTES,
 };
 
-use crate::{Error, errors::Result};
+use crate::{errors::Result, Error};
 
 const SIGNATUREBYTES: usize = SODIUM_SIGNATUREBYTES;
 
@@ -60,7 +60,9 @@ pub struct SignatureStream {
 
 impl SignatureStream {
     pub fn new() -> SignatureStream {
-        SignatureStream { state: State::init() }
+        SignatureStream {
+            state: State::init(),
+        }
     }
 
     pub fn push(&mut self, m: &[u8]) {
@@ -72,7 +74,10 @@ impl SignatureStream {
     }
 
     pub fn verify(&mut self, signature: &Signature, public_key: &PublicKey) -> Result<()> {
-        if !self.state.verify(signature.sodium_signature(), public_key.sodium_public_key()) {
+        if !self
+            .state
+            .verify(signature.sodium_signature(), public_key.sodium_public_key())
+        {
             return Err(Error::Verification);
         }
         Ok(())
@@ -124,29 +129,25 @@ pub fn verify(public_key: &PublicKey, signature: &Signature, msg: &[u8]) -> Resu
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
-    use crate::{
-        errors::{Error, Result},
-        init,
-    };
+    use crate::{errors::Result, init, tests::message_strategy};
 
-    #[test]
-    fn sign_and_verify() -> Result<()> {
-        init().expect("Should always initialize");
-        let key_pair = KeyPair::new();
-        let msg = "MESSAGE".as_bytes();
+    proptest! {
+        #[test]
+        fn sign_and_verify(msg in message_strategy(1000)) {
+            init()?;
+            let key_pair = KeyPair::new();
 
-        let sig = key_pair.sign(msg);
-        if !key_pair.verify(&sig, msg) {
-            return Err(Error::Verification);
+            let sig = key_pair.sign(msg.as_slice());
+            prop_assert!(verify(key_pair.public_key(), &sig, msg.as_slice()).is_ok());
         }
-
-        Ok(())
     }
 
     #[test]
     fn sign_and_verify_stream() -> Result<()> {
-        init().expect("Should always initialize");
+        init()?;
         let key_pair = KeyPair::new();
         let msg = "VERY LONG MESSAGE".as_bytes();
 

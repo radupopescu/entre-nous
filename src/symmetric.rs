@@ -10,7 +10,8 @@ use std::cmp::min;
 use sodiumoxide::crypto::{
     secretbox::{gen_nonce, open, seal, Key as BoxKey, Nonce as SodiumNonce},
     secretstream::{
-        gen_key, Header as SodiumHeader, Key as StreamKey, Pull, Push, Stream, Tag, ABYTES, HEADERBYTES,
+        gen_key, Header as SodiumHeader, Key as StreamKey, Pull, Push, Stream, Tag, ABYTES,
+        HEADERBYTES,
     },
 };
 
@@ -27,23 +28,14 @@ pub struct Packet {
     ciphertext: Vec<u8>,
 }
 
-impl Packet {
-    pub fn validate(&self) -> Result<()> {
-        if let Some(chunk_size) = self.chunk_size {
-            if chunk_size == 0 {
-                return Err(Error::InvalidChunkSize);
-            }
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct Header(SodiumHeader);
 
 impl Header {
     pub fn from_slice(b: &[u8]) -> Result<Header> {
-        Ok(Header(SodiumHeader::from_slice(b).ok_or(Error::InvalidSliceSize)?))
+        Ok(Header(
+            SodiumHeader::from_slice(b).ok_or(Error::InvalidSliceSize)?,
+        ))
     }
 }
 
@@ -131,34 +123,35 @@ impl Key {
         let mut output = Packet {
             header: *stream.header(),
             chunk_size,
-            ciphertext: Vec::with_capacity(payload.len() + num_chunks * ENCRYPTION_ADDITIONAL_BYTES),
+            ciphertext: Vec::with_capacity(
+                payload.len() + num_chunks * ENCRYPTION_ADDITIONAL_BYTES,
+            ),
         };
         match chunk_size {
-            Some(chunk_size) => {
-                if chunk_size == 0 {
-                    return Err(Error::InvalidChunkSize);
-                }
+            Some(chunk_size) if chunk_size > 0 => {
                 let mut buf = Vec::new();
                 let mut start = 0;
-                while start < payload.len() {
+                loop {
                     let end = min(start + chunk_size, payload.len());
                     let last_chunk = end == payload.len();
                     stream.push_to_vec(&payload[start..end], last_chunk, &mut buf)?;
                     output.ciphertext.extend_from_slice(buf.as_slice());
                     start += chunk_size;
+                    if start >= payload.len() {
+                        break;
+                    }
                 }
             }
-            None => stream.push_to_vec(payload, true, &mut output.ciphertext)?,
+            _ => stream.push_to_vec(payload, true, &mut output.ciphertext)?,
         };
         Ok(output)
     }
 
     pub fn decrypt(&self, packet: &Packet) -> Result<Vec<u8>> {
-        packet.validate()?;
         let mut stream = self.init_decryption_stream(&packet.header)?;
         let encrypted_chunk_size = match packet.chunk_size {
-            Some(chunk_size) => chunk_size + ENCRYPTION_ADDITIONAL_BYTES,
-            None => packet.ciphertext.len(),
+            Some(chunk_size) if chunk_size > 0 => chunk_size + ENCRYPTION_ADDITIONAL_BYTES,
+            _ => packet.ciphertext.len(),
         };
         let mut buf = Vec::new();
         let mut payload = Vec::new();
@@ -208,7 +201,7 @@ fn num_chunks_in_cleartext(payload_size: usize, chunk_size: Option<usize>) -> us
     match chunk_size {
         Some(chunk_size) => {
             if chunk_size == 0 {
-                return 0;
+                return 1;
             }
             (payload_size as f64 / chunk_size as f64).ceil().abs() as usize
         }
@@ -220,45 +213,40 @@ fn num_chunks_in_cleartext(payload_size: usize, chunk_size: Option<usize>) -> us
 mod tests {
     use std::cmp::Ordering;
 
+    use proptest::prelude::*;
+
     use super::*;
-    use crate::init;
+    use crate::{
+        init,
+        tests::{message_strategy, optional_chunk_size_strategy},
+    };
 
-    #[test]
-    fn encrypt_and_decrypt() -> Result<()> {
-        init().expect("Should always initialize");
-        let msg = "MESSAGE".as_bytes();
-        let key = Key::new();
-        let pkt = key.encrypt(msg, None)?;
-        let msg_again = key.decrypt(&pkt)?;
-        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
-        Ok(())
-    }
+    proptest! {
+        #[test]
+        fn encrypt_and_decrypt_box(msg in message_strategy(1000)) {
+            init()?;
+            let key = Key::new();
+            let pkt = key.encrypt_box(msg.as_slice());
+            let msg_again = key.decrypt_box(&pkt)?;
+            prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+        }
 
-    #[test]
-    fn encrypt_and_decrypt_box() -> Result<()> {
-        init().expect("Should always initialize");
-        let msg = "MESSAGE".as_bytes();
-        let key = Key::new();
-        let pkt = key.encrypt_box(msg);
-        let msg_again = key.decrypt_box(&pkt)?;
-        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
-        Ok(())
-    }
-
-    #[test]
-    fn encrypt_and_decrypt_chunked() -> Result<()> {
-        init().expect("Should always initialize");
-        let msg = "VERY LONG MESSAGE".as_bytes();
-        let key = Key::new();
-        let pkt = key.encrypt(msg, Some(5))?;
-        let msg_again = key.decrypt(&pkt)?;
-        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
-        Ok(())
+        #[test]
+        fn encrypt_and_decrypt_stream(
+            chunk_size in optional_chunk_size_strategy(2000),
+            msg in message_strategy(1000)
+        ) {
+            init()?;
+            let key = Key::new();
+            let pkt = key.encrypt(msg.as_slice(), chunk_size)?;
+            let msg_again = key.decrypt(&pkt)?;
+            prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+        }
     }
 
     #[test]
     fn encrypt_and_decrypt_streams() -> Result<()> {
-        init().expect("Should always initialize");
+        init()?;
         let msg = "VERY LONG MESSAGE".as_bytes();
         let key = Key::new();
         let mut enc_stream = key.init_encryption_stream()?;
@@ -273,10 +261,10 @@ mod tests {
 
     #[test]
     fn test_num_chunks_in_cleartext() {
-        assert_eq!(num_chunks_in_cleartext(5, Some(0)), 0);
+        assert_eq!(num_chunks_in_cleartext(5, None), 1);
+        assert_eq!(num_chunks_in_cleartext(5, Some(0)), 1);
         assert_eq!(num_chunks_in_cleartext(5, Some(2)), 3);
         assert_eq!(num_chunks_in_cleartext(4, Some(2)), 2);
         assert_eq!(num_chunks_in_cleartext(5, Some(10)), 1);
-        assert_eq!(num_chunks_in_cleartext(5, None), 1);
     }
 }
