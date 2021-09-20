@@ -25,37 +25,44 @@ use crate::symmetric::{Header, ENCRYPTION_ADDITIONAL_BYTES, HEADER_BYTES};
 
 pub struct Envelope {
     data: Packet,
-    signature: Packet,
+    signature: Option<Packet>,
 }
 
 pub fn init() -> Result<()> {
     sodiumoxide::init().map_err(|_| Error::Initialization)
 }
 
-pub fn encrypt_and_sign(
+pub fn encrypt(
     payload: &[u8],
     encryption_key: &SymmetricKey,
-    signing_key: &KeyPair,
+    signing_key: Option<&KeyPair>,
     chunk_size: Option<usize>,
 ) -> Result<Envelope> {
     let data = encryption_key.encrypt(payload, chunk_size)?;
-    let sig = signing_key.sign(payload);
-    let signature = encryption_key.encrypt(&sig.to_bytes(), None)?;
+    let signature = if let Some(key) = signing_key {
+        let signature = key.sign(payload);
+        let signature_packet = encryption_key.encrypt(&signature.to_bytes(), None)?;
+        Some(signature_packet)
+    } else {
+        None
+    };
     Ok(Envelope { data, signature })
 }
 
-pub fn stream_encrypt_and_sign<D, S>(
+pub fn stream_encrypt<D, S>(
     source: &mut S,
     dest: &mut D,
     encryption_key: &SymmetricKey,
-    signing_key: &KeyPair,
+    signing_key: Option<&KeyPair>,
     chunk_size: usize,
     max_read_bytes: Option<usize>,
-) -> Result<Packet>
+) -> Result<Option<Packet>>
 where
     S: std::io::Read + ?Sized,
     D: std::io::Write + ?Sized,
 {
+    let sign = signing_key.is_some();
+
     let mut encryption_stream = encryption_key.init_encryption_stream()?;
     let mut signature_stream = SignatureStream::new();
 
@@ -97,44 +104,63 @@ where
         if written_bytes != read_bytes + ENCRYPTION_ADDITIONAL_BYTES {
             return Err(Error::StreamingWrite);
         }
-        signature_stream.push(&read_buffer[..read_bytes]);
+        if sign {
+            signature_stream.push(&read_buffer[..read_bytes]);
+        }
 
         total_read_bytes += read_bytes;
     }
 
-    let signature = signature_stream.finalize(signing_key.secret_key());
-
-    let signature_packet = encryption_key.encrypt(&signature.to_bytes(), None)?;
+    let signature_packet = if let Some(signing_key) = signing_key {
+        let signature = signature_stream.finalize(signing_key.secret_key());
+        let signature_packet = encryption_key.encrypt(&signature.to_bytes(), None)?;
+        Some(signature_packet)
+    } else {
+        None
+    };
 
     Ok(signature_packet)
 }
 
-pub fn decrypt_and_verify(
+pub fn decrypt(
     envelope: &Envelope,
     decryption_key: &SymmetricKey,
-    verification_key: &PublicKey,
+    verification_key: Option<&PublicKey>,
 ) -> Result<Vec<u8>> {
     let cleartext = decryption_key.decrypt(&envelope.data)?;
-    let sig = decryption_key.decrypt(&envelope.signature)?;
-    let sig = Signature::new(&sig)?;
-    verification_key.verify(&sig, &cleartext[..])?;
+    match (&envelope.signature, verification_key) {
+        (Some(ref signature_packet), Some(ref verification_key)) => {
+            let sig = decryption_key.decrypt(&signature_packet)?;
+            let sig = Signature::new(&sig)?;
+            verification_key.verify(&sig, &cleartext[..])?;
+        },
+        (Some(ref _signature_packet), None) => {
+            return Err(Error::MissingVerificationKey)
+        }
+        _ => ()
+    }
     Ok(cleartext)
 }
 
-pub fn stream_decrypt_and_verify<S, D>(
+pub fn stream_decrypt<S, D>(
     source: &mut S,
     dest: &mut D,
-    signature_packet: &Packet,
+    signature_packet: Option<&Packet>,
     decryption_key: &SymmetricKey,
-    verification_key: &PublicKey,
+    verification_key: Option<&PublicKey>,
 ) -> Result<()>
 where
     S: std::io::Read,
     D: std::io::Write,
 {
-    // Decrypt signature packet
-    let signature_bytes = decryption_key.decrypt(signature_packet)?;
-    let signature = Signature::new(&signature_bytes)?;
+    let signature = if let Some(signature_packet) = signature_packet {
+        // Decrypt signature packet
+        let signature_bytes = decryption_key.decrypt(signature_packet)?;
+        let signature = Signature::new(&signature_bytes)?;
+        Some(signature)
+    } else {
+        None
+    };
 
     // Read header
     let mut header_buffer = vec![0; HEADER_BYTES];
@@ -173,10 +199,20 @@ where
         if written_bytes + ENCRYPTION_ADDITIONAL_BYTES != read_bytes {
             return Err(Error::StreamingWrite);
         }
-        signature_stream.push(&decryption_buffer[..written_bytes]);
+        if signature_packet.is_some() {
+            signature_stream.push(&decryption_buffer[..written_bytes]);
+        }
     }
 
-    signature_stream.verify(&signature, verification_key)?;
+    match (signature, verification_key) {
+        (Some(ref signature), Some(ref verification_key)) => {
+            signature_stream.verify(&signature, verification_key)?;
+        },
+        (Some(ref _signature), None) => {
+            return Err(Error::MissingVerificationKey)
+        },
+        _ => ()
+    }
 
     Ok(())
 }
@@ -206,7 +242,20 @@ mod tests {
 
     proptest! {
         #[test]
-        fn encrypt_and_sign_then_decrypt_and_verify(
+        fn encrypt_then_decrypt_no_signing(
+            chunk_size in optional_chunk_size_strategy(2000),
+            msg in message_strategy(1000)
+        ) {
+            init()?;
+            let encryption_key = SymmetricKey::new();
+
+            let envelope = encrypt(msg.as_slice(), &encryption_key, None, chunk_size)?;
+            let msg_again = decrypt(&envelope, &encryption_key, None)?;
+            prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+        }
+
+        #[test]
+        fn encrypt_then_decrypt(
             chunk_size in optional_chunk_size_strategy(2000),
             msg in message_strategy(1000)
         ) {
@@ -214,13 +263,13 @@ mod tests {
             let signing_key = KeyPair::new();
             let encryption_key = SymmetricKey::new();
 
-            let envelope = encrypt_and_sign(msg.as_slice(), &encryption_key, &signing_key, chunk_size)?;
-            let msg_again = decrypt_and_verify(&envelope, &encryption_key, &signing_key.public_key())?;
+            let envelope = encrypt(msg.as_slice(), &encryption_key, Some(&signing_key), chunk_size)?;
+            let msg_again = decrypt(&envelope, &encryption_key, Some(&signing_key.public_key()))?;
             prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
         }
 
         #[test]
-        fn mem_stream_encrypt_and_sign_then_decrypt_and_verify(
+        fn mem_stream_encrypt_then_decrypt(
             chunk_size in 0..2000usize,
             msg in message_strategy(1000),
         ) {
@@ -229,28 +278,28 @@ mod tests {
             let encryption_key = SymmetricKey::new();
 
             let mut ciphertext = Vec::new();
-            let signature_packet = stream_encrypt_and_sign(
+            let signature_packet = stream_encrypt(
                 &mut (&msg[..]),
                 &mut ciphertext,
                 &encryption_key,
-                &signing_key,
+                Some(&signing_key),
                 chunk_size,
                 None,
             )?;
 
             let mut msg_again = Vec::new();
-            stream_decrypt_and_verify(
+            stream_decrypt(
                 &mut (&ciphertext[..]),
                 &mut msg_again,
-                &signature_packet,
+                signature_packet.as_ref(),
                 &encryption_key,
-                &signing_key.public_key(),
+                Some(&signing_key.public_key()),
             )?;
             prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
         }
 
         #[test]
-        fn file_stream_encrypt_and_sign_then_decrypt_and_verify(
+        fn file_stream_encrypt_then_decrypt(
             chunk_size in 0..2000usize,
             msg in message_strategy(1000),
         ) {
@@ -263,23 +312,23 @@ mod tests {
             input_file.seek(SeekFrom::Start(0))?;
 
             let mut ciphertext_file = tempfile()?;
-            let signature_packet = stream_encrypt_and_sign(
+            let signature_packet = stream_encrypt(
                 &mut input_file,
                 &mut ciphertext_file,
                 &encryption_key,
-                &signing_key,
+                Some(&signing_key),
                 chunk_size,
                 None,
             )?;
             ciphertext_file.seek(SeekFrom::Start(0))?;
 
             let mut output_file = tempfile()?;
-            stream_decrypt_and_verify(
+            stream_decrypt(
                 &mut ciphertext_file,
                 &mut output_file,
-                &signature_packet,
+                signature_packet.as_ref(),
                 &encryption_key,
-                &signing_key.public_key(),
+                Some(&signing_key.public_key()),
             )?;
 
             output_file.seek(SeekFrom::Start(0))?;
