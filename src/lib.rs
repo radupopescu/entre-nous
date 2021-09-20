@@ -12,7 +12,7 @@ mod symmetric;
 
 pub use {
     errors::{Error, Result},
-    sign::{verify, KeyPair, PublicKey, Signature, SignatureStream},
+    sign::{KeyPair, PublicKey, Signature, SignatureStream},
     symmetric::{Key as SymmetricKey, Packet},
 };
 
@@ -117,7 +117,7 @@ pub fn decrypt_and_verify(
     let cleartext = decryption_key.decrypt(&envelope.data)?;
     let sig = decryption_key.decrypt(&envelope.signature)?;
     let sig = Signature::new(&sig)?;
-    verify(&verification_key, &sig, &cleartext[..])?;
+    verification_key.verify(&sig, &cleartext[..])?;
     Ok(cleartext)
 }
 
@@ -250,44 +250,44 @@ mod tests {
         }
 
         #[test]
-    fn file_stream_encrypt_and_sign_then_decrypt_and_verify(
-        chunk_size in 0..2000usize,
-        msg in message_strategy(1000),
-    ) {
-        init()?;
-        let signing_key = KeyPair::new();
-        let encryption_key = SymmetricKey::new();
+        fn file_stream_encrypt_and_sign_then_decrypt_and_verify(
+            chunk_size in 0..2000usize,
+            msg in message_strategy(1000),
+        ) {
+            init()?;
+            let signing_key = KeyPair::new();
+            let encryption_key = SymmetricKey::new();
 
-        let mut input_file = tempfile()?;
-        input_file.write(&msg)?;
-        input_file.seek(SeekFrom::Start(0))?;
+            let mut input_file = tempfile()?;
+            input_file.write(&msg)?;
+            input_file.seek(SeekFrom::Start(0))?;
 
-        let mut ciphertext_file = tempfile()?;
-        let signature_packet = stream_encrypt_and_sign(
-            &mut input_file,
-            &mut ciphertext_file,
-            &encryption_key,
-            &signing_key,
-            chunk_size,
-            None,
-        )?;
-        ciphertext_file.seek(SeekFrom::Start(0))?;
+            let mut ciphertext_file = tempfile()?;
+            let signature_packet = stream_encrypt_and_sign(
+                &mut input_file,
+                &mut ciphertext_file,
+                &encryption_key,
+                &signing_key,
+                chunk_size,
+                None,
+            )?;
+            ciphertext_file.seek(SeekFrom::Start(0))?;
 
-        let mut output_file = tempfile()?;
-        stream_decrypt_and_verify(
-            &mut ciphertext_file,
-            &mut output_file,
-            &signature_packet,
-            &encryption_key,
-            &signing_key.public_key(),
-        )?;
+            let mut output_file = tempfile()?;
+            stream_decrypt_and_verify(
+                &mut ciphertext_file,
+                &mut output_file,
+                &signature_packet,
+                &encryption_key,
+                &signing_key.public_key(),
+            )?;
 
-        output_file.seek(SeekFrom::Start(0))?;
+            output_file.seek(SeekFrom::Start(0))?;
 
-        let mut msg_again = Vec::new();
-        output_file.read_to_end(&mut msg_again)?;
+            let mut msg_again = Vec::new();
+            output_file.read_to_end(&mut msg_again)?;
 
-        prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
-    }
+            prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+        }
     }
 }

@@ -52,6 +52,17 @@ impl PublicKey {
         let PublicKey(key) = &self;
         key
     }
+
+    pub fn verify(&self, signature: &Signature, msg: &[u8]) -> Result<()> {
+        if !verify_detached(
+            signature.sodium_signature(),
+            msg,
+            self.sodium_public_key(),
+        ) {
+            return Err(Error::InvalidSignature)
+        }
+        Ok(())
+    }
 }
 
 pub struct SignatureStream {
@@ -78,7 +89,7 @@ impl SignatureStream {
             .state
             .verify(signature.sodium_signature(), public_key.sodium_public_key())
         {
-            return Err(Error::Verification);
+            return Err(Error::InvalidSignature);
         }
         Ok(())
     }
@@ -110,21 +121,9 @@ impl KeyPair {
         Signature(sign_detached(msg, &self.secret_key.sodium_secret_key()))
     }
 
-    pub fn verify(&self, sig: &Signature, msg: &[u8]) -> bool {
-        let Signature(sig) = sig;
-        verify_detached(sig, msg, &self.public_key.sodium_public_key())
+    pub fn verify(&self, sig: &Signature, msg: &[u8]) -> Result<()> {
+        self.public_key().verify(sig, msg)
     }
-}
-
-pub fn verify(public_key: &PublicKey, signature: &Signature, msg: &[u8]) -> Result<()> {
-    if !verify_detached(
-        signature.sodium_signature(),
-        msg,
-        &public_key.sodium_public_key(),
-    ) {
-        return Err(Error::Verification);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -141,7 +140,7 @@ mod tests {
             let key_pair = KeyPair::new();
 
             let sig = key_pair.sign(msg.as_slice());
-            prop_assert!(verify(key_pair.public_key(), &sig, msg.as_slice()).is_ok());
+            prop_assert!(key_pair.verify(&sig, msg.as_slice()).is_ok());
         }
     }
 
