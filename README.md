@@ -6,6 +6,8 @@
 
 A library of high-level cryptographic operations making strong use of types.
 
+**Disclaimer** This library is experimental, under active development. It is not safe to use in a production setting.
+
 ## License and authorship
 
 The contributors are listed in AUTHORS. This project uses the MPL v2 license, see LICENSE.

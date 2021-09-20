@@ -78,7 +78,12 @@ where
     let mut read_buffer = vec![0; chunk_size];
     let mut encryption_buffer = Vec::with_capacity(chunk_size + ENCRYPTION_ADDITIONAL_BYTES);
     while total_read_bytes < max_read_bytes {
-        let read_bytes = io_helpers::read(source, &mut read_buffer)?;
+        let read_bytes = if chunk_size != 0 {
+            io_helpers::read(source, &mut read_buffer)?
+        } else {
+            read_buffer.clear();
+            source.read_to_end(&mut read_buffer)?
+        };
         if read_bytes == 0 {
             break;
         }
@@ -211,51 +216,50 @@ mod tests {
 
             let envelope = encrypt_and_sign(msg.as_slice(), &encryption_key, &signing_key, chunk_size)?;
             let msg_again = decrypt_and_verify(&envelope, &encryption_key, &signing_key.public_key())?;
-            assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+            prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
         }
-    }
 
-    #[test]
-    fn mem_stream_encrypt_and_sign_then_decrypt_and_verify() -> Result<()> {
+        #[test]
+        fn mem_stream_encrypt_and_sign_then_decrypt_and_verify(
+            chunk_size in 0..2000usize,
+            msg in message_strategy(1000),
+        ) {
+            init()?;
+            let signing_key = KeyPair::new();
+            let encryption_key = SymmetricKey::new();
+
+            let mut ciphertext = Vec::new();
+            let signature_packet = stream_encrypt_and_sign(
+                &mut (&msg[..]),
+                &mut ciphertext,
+                &encryption_key,
+                &signing_key,
+                chunk_size,
+                None,
+            )?;
+
+            let mut msg_again = Vec::new();
+            stream_decrypt_and_verify(
+                &mut (&ciphertext[..]),
+                &mut msg_again,
+                &signature_packet,
+                &encryption_key,
+                &signing_key.public_key(),
+            )?;
+            prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+        }
+
+        #[test]
+    fn file_stream_encrypt_and_sign_then_decrypt_and_verify(
+        chunk_size in 0..2000usize,
+        msg in message_strategy(1000),
+    ) {
         init()?;
         let signing_key = KeyPair::new();
         let encryption_key = SymmetricKey::new();
-
-        let msg = "THIS IS ANOTHER VERY LONG MESSAGE".as_bytes();
-
-        let mut ciphertext = Vec::new();
-        let signature_packet = stream_encrypt_and_sign(
-            &mut (&msg[..]),
-            &mut ciphertext,
-            &encryption_key,
-            &signing_key,
-            10,
-            None,
-        )?;
-
-        let mut msg_again = Vec::new();
-        stream_decrypt_and_verify(
-            &mut (&ciphertext[..]),
-            &mut msg_again,
-            &signature_packet,
-            &encryption_key,
-            &signing_key.public_key(),
-        )?;
-        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
-
-        Ok(())
-    }
-
-    #[test]
-    fn file_stream_encrypt_and_sign_then_decrypt_and_verify() -> Result<()> {
-        init()?;
-        let signing_key = KeyPair::new();
-        let encryption_key = SymmetricKey::new();
-
-        let msg = "THIS IS ANOTHER VERY LONG MESSAGE".as_bytes();
 
         let mut input_file = tempfile()?;
-        input_file.write(msg)?;
+        input_file.write(&msg)?;
         input_file.seek(SeekFrom::Start(0))?;
 
         let mut ciphertext_file = tempfile()?;
@@ -264,7 +268,7 @@ mod tests {
             &mut ciphertext_file,
             &encryption_key,
             &signing_key,
-            10,
+            chunk_size,
             None,
         )?;
         ciphertext_file.seek(SeekFrom::Start(0))?;
@@ -283,8 +287,7 @@ mod tests {
         let mut msg_again = Vec::new();
         output_file.read_to_end(&mut msg_again)?;
 
-        assert_eq!(Ordering::Equal, msg.cmp(msg_again.as_slice()));
-
-        Ok(())
+        prop_assert_eq!(Ordering::Equal, msg.cmp(&msg_again));
+    }
     }
 }
