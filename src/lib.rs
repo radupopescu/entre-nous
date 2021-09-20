@@ -133,11 +133,9 @@ pub fn decrypt(
             let sig = decryption_key.decrypt(&signature_packet)?;
             let sig = Signature::new(&sig)?;
             verification_key.verify(&sig, &cleartext[..])?;
-        },
-        (Some(ref _signature_packet), None) => {
-            return Err(Error::MissingVerificationKey)
         }
-        _ => ()
+        (Some(ref _signature_packet), None) => return Err(Error::MissingVerificationKey),
+        _ => (),
     }
     Ok(cleartext)
 }
@@ -207,11 +205,9 @@ where
     match (signature, verification_key) {
         (Some(ref signature), Some(ref verification_key)) => {
             signature_stream.verify(&signature, verification_key)?;
-        },
-        (Some(ref _signature), None) => {
-            return Err(Error::MissingVerificationKey)
-        },
-        _ => ()
+        }
+        (Some(ref _signature), None) => return Err(Error::MissingVerificationKey),
+        _ => (),
     }
 
     Ok(())

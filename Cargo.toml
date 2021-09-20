@@ -18,5 +18,13 @@ rand = "^0.8.4"
 tempfile = "^3.2.0"
 
 [[bench]]
+name = "high_level"
+harness = false
+
+[[bench]]
 name = "symmetric"
+harness = false
+
+[[bench]]
+name = "sign"
 harness = false

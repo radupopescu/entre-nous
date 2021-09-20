@@ -36,6 +36,7 @@ impl Signature {
     }
 }
 
+#[derive(Clone)]
 pub struct SecretKey(SodiumSecretKey);
 
 impl SecretKey {
@@ -45,6 +46,7 @@ impl SecretKey {
     }
 }
 
+#[derive(Clone)]
 pub struct PublicKey(SodiumPublicKey);
 
 impl PublicKey {
@@ -95,6 +97,7 @@ impl SignatureStream {
     }
 }
 
+#[derive(Clone)]
 pub struct KeyPair {
     secret_key: SecretKey,
     public_key: PublicKey,
