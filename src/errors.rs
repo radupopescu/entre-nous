@@ -25,6 +25,8 @@ pub enum Error {
     StreamingDecryptionPull,
     StreamingRead,
     StreamingWrite,
+    PasswordHashing,
+    SRP(srp::types::SrpAuthError),
     IO(std::io::Error),
 }
 
@@ -44,6 +46,8 @@ impl std::error::Error for Error {
             Error::StreamingDecryptionPull => None,
             Error::StreamingRead => None,
             Error::StreamingWrite => None,
+            Error::PasswordHashing => None,
+            Error::SRP(ref source) => Some(source),
             Error::IO(ref source) => Some(source),
         }
     }
@@ -55,7 +59,9 @@ impl std::fmt::Display for Error {
             Error::Initialization => write!(f, "Initialization error"),
             Error::Verification => write!(f, "Verification error"),
             Error::InvalidSignature => write!(f, "Invalid signature"),
-            Error::MissingVerificationKey => write!(f, "Unable to verify signature. Missing verification key"),
+            Error::MissingVerificationKey => {
+                write!(f, "Unable to verify signature. Missing verification key")
+            }
             Error::InvalidSize(ref source) => source.fmt(f),
             Error::InvalidSliceSize => write!(f, "Invalid size of input slice"),
             Error::StreamingEncryptionInit => write!(f, "Error initializing encryption stream"),
@@ -65,6 +71,8 @@ impl std::fmt::Display for Error {
             Error::StreamingDecryptionPull => write!(f, "Error pulling from decryption stream"),
             Error::StreamingRead => write!(f, "Error reading from stream"),
             Error::StreamingWrite => write!(f, "Error writing to stream"),
+            Error::PasswordHashing => write!(f, "Error deriving key from password"),
+            Error::SRP(ref source) => source.fmt(f),
             Error::IO(ref source) => source.fmt(f),
         }
     }
@@ -79,5 +87,11 @@ impl From<TryFromSliceError> for Error {
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Error {
         Error::IO(err)
+    }
+}
+
+impl From<srp::types::SrpAuthError> for Error {
+    fn from(err: srp::types::SrpAuthError) -> Error {
+        Error::SRP(err)
     }
 }

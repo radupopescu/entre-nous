@@ -56,12 +56,8 @@ impl PublicKey {
     }
 
     pub fn verify(&self, signature: &Signature, msg: &[u8]) -> Result<()> {
-        if !verify_detached(
-            signature.sodium_signature(),
-            msg,
-            self.sodium_public_key(),
-        ) {
-            return Err(Error::InvalidSignature)
+        if !verify_detached(signature.sodium_signature(), msg, self.sodium_public_key()) {
+            return Err(Error::InvalidSignature);
         }
         Ok(())
     }

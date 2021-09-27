@@ -7,11 +7,18 @@
 
 mod errors;
 mod io_helpers;
+mod password_hash;
 mod sign;
+mod srp;
 mod symmetric;
 
 pub use {
+    crate::srp::{
+        generate_private_ephemeral, Client, ClientAfterHandshake, ClientProof, Mode, Server,
+        ServerProof, Verifier,
+    },
     errors::{Error, Result},
+    password_hash::{derive_key, gen_salt, Salt},
     sign::{KeyPair, PublicKey, Signature, SignatureStream},
     symmetric::{Key as SymmetricKey, Packet},
 };
