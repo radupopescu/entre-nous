@@ -82,10 +82,6 @@ impl ClientAfterHandshake {
     }
 }
 
-pub struct Verifier(Vec<u8>);
-
-pub struct ClientProof(Vec<u8>);
-
 pub struct Server {
     srp_server: SrpServer<Sha256>,
 }
@@ -123,20 +119,42 @@ impl Server {
     }
 }
 
+pub struct Verifier(Vec<u8>);
+
+impl From<&[u8]> for Verifier {
+    fn from(s: &[u8]) -> Self {
+        Self(s.to_owned())
+    }
+}
+
+pub struct ClientProof(Vec<u8>);
+
+impl From<&[u8]> for ClientProof {
+    fn from(s: &[u8]) -> Self {
+        Self(s.to_owned())
+    }
+}
+
 pub struct ServerProof(Vec<u8>);
+
+impl From<&[u8]> for ServerProof {
+    fn from(s: &[u8]) -> Self {
+        Self(s.to_owned())
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::password_hash::{derive_key, gen_salt},
+        crate::password_hash::{derive_key, Salt},
     };
 
     #[test]
     fn full_handshake() -> Result<()> {
         let username = "some_user";
         let password = "some_pass";
-        let salt = gen_salt();
+        let salt = Salt::new();
 
         let mut private_key = vec![0u8; 32];
         derive_key(&mut private_key, password.as_bytes(), &salt)?;
@@ -166,7 +184,7 @@ mod tests {
         let username = "some_user";
         let password = "some_pass";
         let wrong_password = "wrong_pass";
-        let salt = gen_salt();
+        let salt = Salt::new();
 
         let mut private_key = vec![0u8; 32];
         derive_key(&mut private_key, password.as_bytes(), &salt)?;
@@ -196,7 +214,7 @@ mod tests {
     fn evil_server() -> Result<()> {
         let username = "some_user";
         let password = "some_pass";
-        let salt = gen_salt();
+        let salt = Salt::new();
 
         let mut private_key = vec![0u8; 32];
         derive_key(&mut private_key, password.as_bytes(), &salt)?;

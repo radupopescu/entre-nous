@@ -13,8 +13,15 @@ use crate::errors::{Error, Result};
 
 pub struct Salt(pub(crate) SodiumSalt);
 
-pub fn gen_salt() -> Salt {
-    Salt(sodium_gen_salt())
+impl Salt {
+    pub fn new() -> Salt {
+        Salt(sodium_gen_salt())
+    }
+
+    pub fn from_slice(s: &[u8]) -> Result<Salt> {
+        let salt = SodiumSalt::from_slice(s).ok_or(Error::InvalidSliceSize)?;
+        Ok(Salt(salt))
+    }
 }
 
 pub fn derive_key<'a>(key: &'a mut [u8], password: &[u8], salt: &Salt) -> Result<&'a [u8]> {
@@ -28,7 +35,7 @@ mod tests {
     #[test]
     fn basic() -> Result<()> {
         let password = "SECURE PASSWORD";
-        let salt = gen_salt();
+        let salt = Salt::new();
         let mut key_in = vec![0; 32];
         let key_out = derive_key(key_in.as_mut_slice(), password.as_bytes(), &salt)?;
         assert_eq!(key_out.len(), key_in.len());
