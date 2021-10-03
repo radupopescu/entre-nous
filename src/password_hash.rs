@@ -11,6 +11,7 @@ use sodiumoxide::crypto::pwhash::{
 
 use crate::errors::{Error, Result};
 
+#[derive(serde::Deserialize)]
 pub struct Salt(pub(crate) SodiumSalt);
 
 impl Salt {
@@ -21,6 +22,12 @@ impl Salt {
     pub fn from_slice(s: &[u8]) -> Result<Salt> {
         let salt = SodiumSalt::from_slice(s).ok_or(Error::InvalidSliceSize)?;
         Ok(Salt(salt))
+    }
+}
+
+impl AsRef<[u8]> for Salt {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 

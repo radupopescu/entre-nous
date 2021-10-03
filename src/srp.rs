@@ -1,5 +1,3 @@
-use srp::client::SrpClientVerifier;
-
 //
 // Copyright 2021 Radu Popescu <mail@radupopescu.net>
 //
@@ -11,9 +9,10 @@ use {
     crate::{errors::Result, password_hash::Salt},
     rand::RngCore,
     sha2::Sha256,
+    serde::{Deserialize, Serialize},
     srp::{
-        client::SrpClient,
-        groups::{G_1024, G_4096, G_8192},
+        client::{SrpClient, SrpClientVerifier},
+        groups::{G_2048, G_4096, G_8192},
         server::{SrpServer, UserRecord},
     },
 };
@@ -24,6 +23,7 @@ pub fn generate_private_ephemeral() -> Vec<u8> {
     eph
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 pub enum Mode {
     Fast,
     Medium,
@@ -37,7 +37,7 @@ pub struct Client<'a> {
 impl<'a> Client<'a> {
     pub fn new(a: &[u8], mode: Mode) -> Client {
         let group: &srp::types::SrpGroup = match mode {
-            Mode::Fast => &G_1024,
+            Mode::Fast => &G_2048,
             Mode::Medium => &G_4096,
             Mode::Slow => &G_8192,
         };
@@ -96,7 +96,7 @@ impl Server {
         mode: Mode,
     ) -> Result<Server> {
         let group: &srp::types::SrpGroup = match mode {
-            Mode::Fast => &G_1024,
+            Mode::Fast => &G_2048,
             Mode::Medium => &G_4096,
             Mode::Slow => &G_8192,
         };
@@ -127,6 +127,12 @@ impl From<&[u8]> for Verifier {
     }
 }
 
+impl AsRef<[u8]> for Verifier {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 pub struct ClientProof(Vec<u8>);
 
 impl From<&[u8]> for ClientProof {
@@ -135,11 +141,23 @@ impl From<&[u8]> for ClientProof {
     }
 }
 
+impl AsRef<[u8]> for ClientProof {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 pub struct ServerProof(Vec<u8>);
 
 impl From<&[u8]> for ServerProof {
     fn from(s: &[u8]) -> Self {
         Self(s.to_owned())
+    }
+}
+
+impl AsRef<[u8]> for ServerProof {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 

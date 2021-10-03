@@ -5,7 +5,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::array::TryFromSliceError;
+use {
+    std::array::TryFromSliceError,
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -26,6 +28,7 @@ pub enum Error {
     StreamingRead,
     StreamingWrite,
     PasswordHashing,
+    Base64(base64::DecodeError),
     SRP(srp::types::SrpAuthError),
     IO(std::io::Error),
 }
@@ -47,6 +50,7 @@ impl std::error::Error for Error {
             Error::StreamingRead => None,
             Error::StreamingWrite => None,
             Error::PasswordHashing => None,
+            Error::Base64(ref source) => Some(source),
             Error::SRP(ref source) => Some(source),
             Error::IO(ref source) => Some(source),
         }
@@ -72,6 +76,7 @@ impl std::fmt::Display for Error {
             Error::StreamingRead => write!(f, "Error reading from stream"),
             Error::StreamingWrite => write!(f, "Error writing to stream"),
             Error::PasswordHashing => write!(f, "Error deriving key from password"),
+            Error::Base64(ref source) => source.fmt(f),
             Error::SRP(ref source) => source.fmt(f),
             Error::IO(ref source) => source.fmt(f),
         }
@@ -90,6 +95,11 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<base64::DecodeError> for Error {
+    fn from(err: base64::DecodeError) -> Error {
+        Error::Base64(err)
+    }
+}
 impl From<srp::types::SrpAuthError> for Error {
     fn from(err: srp::types::SrpAuthError) -> Error {
         Error::SRP(err)
