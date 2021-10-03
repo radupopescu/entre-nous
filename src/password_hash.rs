@@ -5,13 +5,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use sodiumoxide::crypto::pwhash::{
-    derive_key_interactive, gen_salt as sodium_gen_salt, Salt as SodiumSalt,
+use {
+    crate::errors::{Error, Result},
+    serde::Deserialize,
+    sodiumoxide::crypto::pwhash::{
+        derive_key_interactive, gen_salt as sodium_gen_salt, Salt as SodiumSalt,
+    },
 };
 
-use crate::errors::{Error, Result};
-
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
 pub struct Salt(pub(crate) SodiumSalt);
 
 impl Salt {

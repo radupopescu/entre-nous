@@ -11,9 +11,9 @@ pub mod password_hash;
 mod sign;
 pub mod srp;
 mod symmetric;
+
 #[cfg(feature = "web")]
 pub mod web;
-
 #[cfg(feature = "web")]
 #[macro_use] extern crate rocket;
 
