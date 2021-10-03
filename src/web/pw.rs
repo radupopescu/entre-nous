@@ -34,4 +34,3 @@ pub fn derive_key(input: Json<Request>) -> Json<Response<String>> {
         Err(e) => Json(Response::error(format!("{}", e))),
     }
 }
-

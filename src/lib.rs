@@ -15,8 +15,8 @@ mod symmetric;
 #[cfg(feature = "web")]
 pub mod web;
 #[cfg(feature = "web")]
-#[macro_use] extern crate rocket;
-
+#[macro_use]
+extern crate rocket;
 
 pub use {
     errors::{Error, Result},

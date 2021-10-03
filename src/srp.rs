@@ -8,8 +8,8 @@
 use {
     crate::{errors::Result, password_hash::Salt},
     rand::RngCore,
-    sha2::Sha256,
     serde::{Deserialize, Serialize},
+    sha2::Sha256,
     srp::{
         client::{SrpClient, SrpClientVerifier},
         groups::{G_2048, G_4096, G_8192},

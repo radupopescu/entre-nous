@@ -8,7 +8,9 @@
 use {
     crate::{
         password_hash::{derive_key, Salt},
-        srp::{generate_private_ephemeral, Client, ClientProof, Mode, Server, ServerProof, Verifier},
+        srp::{
+            generate_private_ephemeral, Client, ClientProof, Mode, Server, ServerProof, Verifier,
+        },
         web::Response,
         Result,
     },
@@ -30,7 +32,9 @@ pub struct RegistrationData {
 }
 
 #[post("/srp/client/generate_registration_data", data = "<input>")]
-pub fn srp_client_generate_registration_data(input: Json<RegistrationDataRequest>) -> Json<Response<RegistrationData>> {
+pub fn srp_client_generate_registration_data(
+    input: Json<RegistrationDataRequest>,
+) -> Json<Response<RegistrationData>> {
     let resp: Result<RegistrationData> = (|| {
         let a = generate_private_ephemeral();
         let client = Client::new(&a, input.mode);
@@ -66,7 +70,9 @@ pub struct ClientEphemeralsData {
 }
 
 #[post("/srp/client/generate_ephemerals", data = "<input>")]
-pub fn srp_client_generate_ephemerals(input: Json<ClientEphemeralsRequest>) -> Json<Response<ClientEphemeralsData>> {
+pub fn srp_client_generate_ephemerals(
+    input: Json<ClientEphemeralsRequest>,
+) -> Json<Response<ClientEphemeralsData>> {
     let a = generate_private_ephemeral();
     let client = Client::new(&a, input.mode);
     let a_pub = base64::encode(client.get_a_pub());
@@ -89,7 +95,9 @@ pub struct ClientProofData {
 }
 
 #[post("/srp/client/generate_proof", data = "<input>")]
-pub fn srp_client_generate_proof(input: Json<ClientProofRequest>) -> Json<Response<ClientProofData>> {
+pub fn srp_client_generate_proof(
+    input: Json<ClientProofRequest>,
+) -> Json<Response<ClientProofData>> {
     let resp: Result<ClientProofData> = (|| {
         let private_key = base64::decode(&input.private_key)?;
         let b_pub = base64::decode(&input.b_pub)?;
@@ -124,7 +132,9 @@ pub struct ServerEphemeralsData {
 }
 
 #[post("/srp/server/generate_ephemerals", data = "<input>")]
-pub fn srp_server_generate_ephemerals(input: Json<ServerEphemeralsRequest>) -> Json<Response<ServerEphemeralsData>> {
+pub fn srp_server_generate_ephemerals(
+    input: Json<ServerEphemeralsRequest>,
+) -> Json<Response<ServerEphemeralsData>> {
     let resp: Result<ServerEphemeralsData> = (|| {
         let salt = Salt::from_slice(&base64::decode(&input.salt)?)?;
         let verifier = Verifier::from(base64::decode(&input.verifier)?.as_slice());
@@ -158,7 +168,9 @@ pub struct ServerVerifyClientData {
 }
 
 #[post("/srp/server/verify_client", data = "<input>")]
-pub fn srp_server_verify_client(input: Json<ServerVerifyClientRequest>) -> Json<Response<ServerVerifyClientData>> {
+pub fn srp_server_verify_client(
+    input: Json<ServerVerifyClientRequest>,
+) -> Json<Response<ServerVerifyClientData>> {
     let resp: Result<ServerVerifyClientData> = (|| {
         let salt = Salt::from_slice(&base64::decode(&input.salt)?)?;
         let verifier = Verifier::from(base64::decode(&input.verifier)?.as_slice());
@@ -168,7 +180,9 @@ pub fn srp_server_verify_client(input: Json<ServerVerifyClientRequest>) -> Json<
         let server = Server::new(&input.username, &salt, &verifier, &a_pub, &b, input.mode)?;
         let server_proof = server.verify_client(&client_proof)?;
 
-        Ok(ServerVerifyClientData { server_proof: base64::encode(server_proof) })
+        Ok(ServerVerifyClientData {
+            server_proof: base64::encode(server_proof),
+        })
     })();
     match resp {
         Ok(val) => Json(Response::value(val)),
@@ -186,12 +200,12 @@ pub struct ClientVerifyServerRequest {
 }
 
 #[derive(Serialize)]
-pub struct ClientVerifyServerData {
-
-}
+pub struct ClientVerifyServerData {}
 
 #[post("/srp/client/verify_server", data = "<input>")]
-pub fn srp_client_verify_server(input: Json<ClientVerifyServerRequest>) -> Json<Response<ClientVerifyServerData>> {
+pub fn srp_client_verify_server(
+    input: Json<ClientVerifyServerRequest>,
+) -> Json<Response<ClientVerifyServerData>> {
     let resp: Result<ClientVerifyServerData> = (|| {
         let private_key = base64::decode(&input.private_key)?;
         let a = base64::decode(&input.a)?;
