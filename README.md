@@ -1,6 +1,6 @@
 # Entre Nous - A typed high-level cryptography library
 
-[![Rust](https://github.com/radupopescu/entre-nous/actions/workflows/rust.yml/badge.svg)](https://github.com/radupopescu/entre-nous/actions/workflows/rust.yml)
+[![Rust](https://github.com/radupopescu/entre-nous/actions/workflows/rust.yml/badge.svg)](https://github.com/radupopescu/entre-nous/actions/workflows/rust.yml)[![Docker](https://github.com/radupopescu/entre-nous/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/radupopescu/entre-nous/actions/workflows/docker-publish.yml)
 
 ## Overview
 
