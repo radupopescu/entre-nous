@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 # If the Cargo.toml or Cargo.lock files have not changed,
 # we can use the docker build cache and skip these (typically slow) steps.
 WORKDIR /usr/src
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY src ./src
 COPY benches ./benches
 RUN cargo install --features web --target x86_64-unknown-linux-musl --path .
