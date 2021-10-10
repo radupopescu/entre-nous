@@ -18,7 +18,6 @@ WORKDIR /usr/src
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY benches ./benches
-COPY examples ./examples
 RUN cargo install --features web --target x86_64-unknown-linux-musl --path .
 
 # Copy the statically-linked binary into a scratch container.
